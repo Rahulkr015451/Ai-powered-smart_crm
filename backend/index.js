@@ -22,7 +22,7 @@ const GOOGLE_REDIRECT_URI = `http://localhost:${PORT}/api/auth/callback`;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // ── Middleware ────────────────────────────────
-app.use(cors({ origin: "http://localhost:3000", credentials: true }));
+app.use(cors({ origin: "http://localhost:5173", credentials: true }));
 app.use(express.json());
 
 // ── Google OAuth2 Client ─────────────────────
@@ -34,7 +34,7 @@ const oauth2Client = new google.auth.OAuth2(
 
 // ── Gemini AI Client ─────────────────────────
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const geminiModel = genAI.getGenerativeModel({ model: "gemini-3.8-flash" });
 
 // ── JWT Auth Middleware ──────────────────────
 function authenticateToken(req, res, next) {
@@ -110,7 +110,7 @@ app.get("/api/auth/callback", async (req, res) => {
     );
 
     // Redirect to the frontend with the token
-    res.redirect(`http://localhost:3000?token=${jwtToken}`);
+    res.redirect(`http://localhost:5173?token=${jwtToken}`);
   } catch (err) {
     console.error("OAuth callback error:", err.message);
     res.status(500).json({ error: "Authentication failed." });
@@ -123,6 +123,8 @@ app.get("/api/auth/callback", async (req, res) => {
 // ──────────────────────────────────────────────
 app.get("/api/crm/dashboard", authenticateToken, async (req, res) => {
   try {
+    const { pageToken } = req.query;
+
     // Retrieve user's stored Google tokens from the database
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
@@ -138,13 +140,17 @@ app.get("/api/crm/dashboard", authenticateToken, async (req, res) => {
     const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
     // List the top 5 recent messages from the inbox
-    const listResponse = await gmail.users.messages.list({
+    const listParams = {
       userId: "me",
       maxResults: 5,
       labelIds: ["INBOX"],
-    });
+    };
+    if (pageToken) listParams.pageToken = pageToken;
+
+    const listResponse = await gmail.users.messages.list(listParams);
 
     const messages = listResponse.data.messages || [];
+    const nextPageToken = listResponse.data.nextPageToken || null;
     const emails = [];
 
     for (const msg of messages) {
@@ -174,33 +180,19 @@ app.get("/api/crm/dashboard", authenticateToken, async (req, res) => {
       // Extract snippet/body
       const snippet = fullMessage.data.snippet || "";
 
-      // Upsert the sender as a Contact in our database
-      let contact;
-      try {
-        contact = await prisma.contact.upsert({
-          where: { email: senderEmail },
-          update: { name: senderName },
-          create: {
-            name: senderName,
-            email: senderEmail,
-            stage: "Lead",
-          },
-        });
-      } catch (upsertErr) {
-        // If duplicate or other error, try to find existing
-        contact = await prisma.contact.findUnique({
-          where: { email: senderEmail },
-        });
-      }
+      // Only lookup existing contacts (don't create them until we reply)
+      const contact = await prisma.contact.findUnique({
+        where: { email: senderEmail },
+      });
 
-      // Log this as an interaction
+      // Log received email only if they are already a tracked customer
       if (contact) {
         await prisma.interaction.create({
           data: {
             contactId: contact.id,
             type: "Email Received",
             summary: snippet.substring(0, 200),
-            sentiment: "Neutral", // Default; can be enriched with AI later
+            sentiment: "Neutral",
           },
         });
       }
@@ -222,6 +214,7 @@ app.get("/api/crm/dashboard", authenticateToken, async (req, res) => {
     res.json({
       emails,
       totalContacts,
+      nextPageToken,
       message: `Fetched ${emails.length} recent emails and synced contacts.`,
     });
   } catch (err) {
@@ -285,6 +278,98 @@ Respond ONLY with a valid JSON object in this exact format (no markdown, no code
   } catch (err) {
     console.error("AI Draft error:", err.message);
     res.status(500).json({ error: "Failed to generate AI draft." });
+  }
+});
+
+// ──────────────────────────────────────────────
+// 5. POST /api/crm/send (Protected)
+//    Send an email via Gmail API and track customer
+// ──────────────────────────────────────────────
+app.post("/api/crm/send", authenticateToken, async (req, res) => {
+  const { to, name, subject, text } = req.body;
+
+  if (!to || !subject || !text) {
+    return res.status(400).json({ error: "Missing required fields (to, subject, text)." });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+    });
+    if (!user || !user.googleTokens) {
+      return res.status(401).json({ error: "Google account not linked." });
+    }
+
+    oauth2Client.setCredentials(user.googleTokens);
+    const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+
+    // Construct raw email (MIME format)
+    const messageParts = [
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset="UTF-8"`,
+      '',
+      text
+    ];
+    const message = messageParts.join('\n');
+    const encodedMessage = Buffer.from(message)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+    await gmail.users.messages.send({
+      userId: "me",
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+
+    // We reply, so they are now a customer! Upsert them.
+    const contact = await prisma.contact.upsert({
+      where: { email: to },
+      update: { stage: "Prospect" }, // Upgrades them if they already exist
+      create: { name: name || to, email: to, stage: "Lead" },
+    });
+
+    // Log the detailed reply interaction
+    await prisma.interaction.create({
+      data: {
+        contactId: contact.id,
+        type: "Email Sent (Reply)",
+        summary: text, // Storing the full details of the reply
+        sentiment: "Neutral",
+      },
+    });
+
+    res.json({ success: true, message: "Email sent successfully." });
+  } catch (err) {
+    console.error("Send email error:", err.message);
+    res.status(500).json({ error: "Failed to send email." });
+  }
+});
+
+// ──────────────────────────────────────────────
+// 6. GET /api/crm/contacts (Protected)
+//    Fetch all tracked contacts
+// ──────────────────────────────────────────────
+app.get("/api/crm/contacts", authenticateToken, async (req, res) => {
+  try {
+    const contacts = await prisma.contact.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        interactions: {
+          orderBy: { timestamp: 'desc' }
+        },
+        _count: {
+          select: { interactions: true }
+        }
+      }
+    });
+    res.json(contacts);
+  } catch (err) {
+    console.error("Contacts error:", err.message);
+    res.status(500).json({ error: "Failed to fetch contacts." });
   }
 });
 
