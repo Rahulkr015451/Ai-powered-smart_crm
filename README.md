@@ -25,7 +25,7 @@ A full-stack CRM application that syncs your **Gmail inbox**, auto-tracks leads,
 - **Database:** PostgreSQL (Supabase)
 - **ORM:** Prisma 5
 - **Auth:** Google OAuth 2.0 + JWT
-- **AI:** Google Generative AI SDK (`gemini-1.5-flash`)
+- **AI:** Google Generative AI SDK (`Gemini 3.8 Flash`)
 - **Email:** Gmail API via `googleapis`
 
 ### Frontend
