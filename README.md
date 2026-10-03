@@ -1,6 +1,8 @@
 # ⚡ Smart CRM — AI-Powered Customer Relationship Manager
 
-A full-stack CRM application that syncs your **Gmail inbox**, auto-tracks leads, and uses **Google Gemini AI** to analyze sentiment and draft professional email replies — all from a sleek, modern dashboard.
+A full-stack CRM that connects to your Google account, syncs your Gmail inbox, tracks leads as CRM contacts, and uses Google Gemini to analyze email sentiment and draft professional responses from within the dashboard.
+
+This version includes a richer workflow: the app now supports a customer directory, interaction history, direct reply sending, and a modern two-tab dashboard for Inbox and Customers.
 
 ---
 
@@ -8,13 +10,15 @@ A full-stack CRM application that syncs your **Gmail inbox**, auto-tracks leads,
 
 | Feature | Description |
 |---|---|
-| **Google OAuth 2.0** | Secure sign-in via Google with Gmail read/send scopes |
-| **Gmail Sync** | Fetches your latest inbox emails and displays them in a clean feed |
-| **Auto Lead Tracking** | Automatically upserts email senders as CRM contacts (Leads) |
-| **Gemini AI Drafts** | One-click AI-generated professional email replies via Gemini 1.5 Flash |
-| **Sentiment Analysis** | Classifies each email as Positive, Neutral, or Negative |
-| **Interaction Logging** | Every email sync is recorded as a CRM interaction with timestamps |
-| **Dark Mode UI** | Premium glassmorphism dashboard with micro-animations |
+| **Google OAuth 2.0** | Secure sign-in with Gmail read/send access |
+| **Gmail Sync** | Fetches recent inbox emails and displays them in a live dashboard |
+| **Auto Lead Tracking** | Upserts email senders as CRM contacts and tracks them as leads |
+| **Customer Directory** | View all tracked contacts, stages, interaction counts, and latest replies |
+| **Gemini AI Drafts** | Generates polished reply drafts based on the selected email snippet |
+| **Sentiment Analysis** | Detects whether each email is Positive, Neutral, or Negative |
+| **Interaction Logging** | Stores all inbound/outbound email events with timestamps |
+| **Reply Sending** | Sends the AI-generated reply directly from the app using Gmail API |
+| **Dark Mode UI** | Premium glassmorphism dashboard with responsive layout and micro-interactions |
 
 ---
 
@@ -22,38 +26,39 @@ A full-stack CRM application that syncs your **Gmail inbox**, auto-tracks leads,
 
 ### Backend
 - **Runtime:** Node.js + Express
-- **Database:** PostgreSQL (Supabase)
+- **Database:** PostgreSQL (Supabase-compatible)
 - **ORM:** Prisma 5
 - **Auth:** Google OAuth 2.0 + JWT
-- **AI:** Google Generative AI SDK (`Gemini 3.8 Flash`)
+- **AI:** Google Generative AI SDK
 - **Email:** Gmail API via `googleapis`
 
 ### Frontend
-- **Framework:** React 19 (Vite)
+- **Framework:** React 19 + Vite
 - **Icons:** Lucide React
-- **Styling:** Vanilla CSS with custom design system
+- **Styling:** Plain CSS with a custom design system
 
 ---
 
 ## 📁 Project Structure
 
-```
-smart_crm/
+```bash
+Ai-powered-smart_crm/
 ├── backend/
 │   ├── prisma/
-│   │   └── schema.prisma        # Database models (User, Contact, Interaction)
-│   ├── index.js                 # Express server with all API endpoints
-│   ├── .env                     # Environment variables (not committed)
+│   │   └── schema.prisma        # Prisma models for User, Contact, and Interaction
+│   ├── .env                     # Local environment variables (not committed)
+│   ├── index.js                 # Express API server and OAuth flow
 │   └── package.json
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx              # Full CRM dashboard + landing page
-│   │   ├── index.css            # Design system (dark theme, animations)
+│   │   ├── App.jsx              # CRM dashboard and authentication flow
+│   │   ├── index.css            # UI styling and dashboard theme
 │   │   └── main.jsx             # React entry point
 │   ├── index.html
 │   └── package.json
 ├── .gitignore
-└── README.md
+├── README.md
+└── package-lock.json
 ```
 
 ---
@@ -62,11 +67,13 @@ smart_crm/
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `GET` | `/api/auth/google` | Public | Returns Google OAuth consent URL |
-| `GET` | `/api/auth/callback` | Public | Exchanges auth code → JWT, redirects to frontend |
-| `GET` | `/api/crm/dashboard` | 🔒 JWT | Syncs top 5 inbox emails, upserts contacts, returns data |
-| `POST` | `/api/ai/draft` | 🔒 JWT | Sends email snippet to Gemini, returns `{ replyText, sentiment }` |
-| `GET` | `/api/health` | Public | Health check |
+| `GET` | `/api/auth/google` | Public | Returns the Google OAuth consent URL |
+| `GET` | `/api/auth/callback` | Public | Exchanges the authorization code, stores tokens, and redirects with a JWT |
+| `GET` | `/api/crm/dashboard` | 🔒 JWT | Syncs recent Gmail messages, upserts senders, and returns inbox data |
+| `POST` | `/api/ai/draft` | 🔒 JWT | Sends an email snippet to Gemini and returns `{ replyText, sentiment }` |
+| `POST` | `/api/crm/send` | 🔒 JWT | Sends an AI-generated email reply through Gmail and logs the interaction |
+| `GET` | `/api/crm/contacts` | 🔒 JWT | Returns all tracked contacts, stages, counts, and interaction history |
+| `GET` | `/api/health` | Public | Health-check endpoint |
 
 ---
 
@@ -78,15 +85,15 @@ smart_crm/
 - **PostgreSQL** database (or a [Supabase](https://supabase.com) project)
 - **Google Cloud Console** project with:
   - Gmail API enabled
-  - OAuth 2.0 credentials (Client ID + Secret)
+  - OAuth 2.0 client ID and secret
   - Authorized redirect URI: `http://localhost:5000/api/auth/callback`
-- **Gemini API Key** from [Google AI Studio](https://aistudio.google.com/apikey)
+- **Gemini API key** from [Google AI Studio](https://aistudio.google.com/apikey)
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/<your-username>/smart-crm.git
-cd smart-crm
+git clone https://github.com/Rahulkr015451/Ai-powered-smart_crm.git
+cd Ai-powered-smart_crm
 ```
 
 ### 2. Setup Backend
@@ -96,7 +103,7 @@ cd backend
 npm install
 ```
 
-Create a `.env` file in `backend/`:
+Create a `.env` file inside `backend/`:
 
 ```env
 PORT=5000
@@ -104,10 +111,10 @@ DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@db.YOUR_PROJECT.supabase.co:543
 GEMINI_API_KEY=your_gemini_api_key
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
-SUPABASE_SECRET_KEY=your_supabase_secret_key
+SUPABASE_SECRET_KEY=your_jwt_secret
 ```
 
-Push the database schema:
+Push the Prisma schema:
 
 ```bash
 npx prisma db push
@@ -129,26 +136,28 @@ npm install
 npm run dev
 ```
 
-The frontend runs on **http://localhost:3000** (Vite default: 5173 — update if needed).
+The frontend runs on **http://localhost:5173** by default.
 
 ---
 
-## 🖥️ Usage
+## 🖥️ Usage Flow
 
-1. Open `http://localhost:5173` in your browser.
-2. Click **"Sign in with Google"** and authorize Gmail access.
-3. You'll be redirected back to the dashboard with your emails loaded.
-4. Click **"Invoke Gemini"** on any email to:
-   - See the **sentiment** (Positive / Neutral / Negative)
-   - Get an **AI-drafted reply** in a read-only text area
-   - **Copy** the draft to your clipboard with one click
-5. Click **"Sync Mailbox"** anytime to pull the latest emails.
+1. Open `http://localhost:5173` in the browser.
+2. Click **"Sign in with Google"** and grant Gmail permissions.
+3. After redirecting back, the dashboard loads with:
+   - an **Inbox** tab for recent emails
+   - a **Customers** tab for your tracked CRM contacts
+4. Click **"Sync Mailbox"** to pull the latest Gmail threads.
+5. Select an email and click **"Invoke Gemini"** to generate:
+   - customer sentiment analysis
+   - a polished reply draft
+6. Review/edit the generated text and click **"Send Reply"** to send it via Gmail.
 
 ---
 
 ## 📊 Database Schema
 
-```
+```text
 ┌──────────────┐       ┌──────────────────┐       ┌─────────────────┐
 │    User      │       │    Contact       │       │  Interaction    │
 ├──────────────┤       ├──────────────────┤       ├─────────────────┤
@@ -172,11 +181,23 @@ The frontend runs on **http://localhost:3000** (Vite default: 5173 — update if
 | `GEMINI_API_KEY` | Google Gemini API key |
 | `GOOGLE_CLIENT_ID` | Google OAuth Client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret |
-| `SUPABASE_SECRET_KEY` | Used as JWT signing secret |
+| `SUPABASE_SECRET_KEY` | JWT signing secret used by the backend |
 
 ---
 
-## 📝 License
+## 📝 Notes on Recent Changes
+
+The app has been extended beyond a simple Gmail dashboard:
+
+- Added a **Customers** tab with overview of tracked leads and interactions.
+- Added **interaction logging** for both inbound and outbound email activity.
+- Added **direct Gmail reply sending** from the AI workbench.
+- Improved dashboard UX for syncing, loading older emails, and displaying CRM metrics.
+- Centralized the app flow around OAuth authentication + JWT-secured API calls.
+
+---
+
+## 📜 License
 
 This project is for educational and demonstration purposes.
 
